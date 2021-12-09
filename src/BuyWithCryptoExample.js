@@ -1,16 +1,8 @@
-import React, { useEffect, useState } from "react";
-import {
-  useBuyWithMint,
-  useAllowance,
-  useWeb3Provider,
-  useMintClubBondContract,
-  getMintClubBondContract,
-  getMintClubZapContract,
-  useBuyWithCrypto,
-  ADDRESSES,
-} from "mint.club-sdk";
 import { useWeb3React } from "@web3-react/core";
+import { ADDRESSES, approve, allowance, buyWithCrypto } from "mint.club-sdk";
+import React, { useEffect, useState, useMemo } from "react";
 import { Injected } from "./web3React";
+import { debounce } from "lodash";
 
 const BuyWithCryptoExample = () => {
   const [amount, setAmount] = useState(0);
@@ -18,28 +10,65 @@ const BuyWithCryptoExample = () => {
   const [tokenAddress, setTokenAddress] = useState("");
   const [referrer, setReferrer] = useState("");
   const [tokenIn, setTokenIn] = useState("BNB");
+  const [loading, setLoading] = useState(false);
+  const [out, setOut] = useState(null);
+  const [allowed, setAllowed] = useState(null);
   const [slippage, setSlippage] = useState(2);
-  const provider = useWeb3Provider();
-  const { activate, deactivate, account, chainId } = useWeb3React();
+  const { activate, deactivate, account, chainId, library } = useWeb3React();
 
-  const { amountOut, loading, error } = useBuyWithCrypto({
-    amountIn: amount,
-    tokenIn: {
-      address: tokenIn,
-      decimals,
-    },
+  async function calc(
+    amount,
+    tokenIn,
     tokenAddress,
     slippage,
     referrer,
-    chainId,
-  });
-
-  const allowance = useAllowance(
-    tokenIn === "BNB" ? ADDRESSES.wbnb[chainId] : tokenIn,
-    account,
-    ADDRESSES.mintClubZap[chainId],
     chainId
-  );
+  ) {
+    const result = await buyWithCrypto(
+      amount,
+      tokenIn,
+      tokenAddress,
+      slippage,
+      referrer,
+      chainId
+    );
+
+    setLoading(false);
+    setOut(result);
+  }
+
+  const debouncedCalculation = useMemo(() => debounce(calc, 1000), []);
+
+  useEffect(() => {
+    if (amount && tokenAddress) {
+      setLoading(true);
+      setOut(null);
+      debouncedCalculation(
+        amount,
+        { address: tokenIn, decimals },
+        tokenAddress,
+        slippage,
+        referrer,
+        chainId
+      );
+    }
+  }, [amount, tokenAddress, tokenIn, decimals, referrer, slippage, chainId]);
+
+  useEffect(() => {
+    if (account && chainId && tokenIn) {
+      (async () => {
+        const _allowance = await allowance(
+          tokenIn === "BNB" ? ADDRESSES.wbnb[chainId] : tokenIn,
+          account,
+          ADDRESSES.mintClubZap[chainId],
+          chainId
+        );
+        console.log("allowance", _allowance.toString());
+
+        setAllowed(_allowance?.toString());
+      })();
+    }
+  }, [account, chainId, tokenIn]);
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -154,17 +183,36 @@ const BuyWithCryptoExample = () => {
               onChange={(e) => setReferrer(e.target.value)}
             />
           </div>
-          {tokenIn !== "BNB" && <div>Allowance: {allowance}</div>}
+          {tokenIn !== "BNB" && (
+            <div>
+              Token Allowance: {allowed}
+              {tokenAddress && allowed === "0" && (
+                <button
+                  onClick={() => {
+                    approve(
+                      tokenIn === "BNB" ? ADDRESSES.wbnb[chainId] : tokenIn,
+                      ADDRESSES.mintClubZap[chainId],
+                      library.getSigner(account),
+                      null,
+                      chainId
+                    );
+                  }}
+                >
+                  Approve
+                </button>
+              )}
+            </div>
+          )}
           <div>
             {loading ? (
               "loading..."
             ) : (
               <div>
-                amountOut: {JSON.stringify(amountOut)}
-                {amountOut.buy && (
+                amountOut: {out?.value.toString()}
+                {out?.buy && (
                   <button
                     onClick={() => {
-                      amountOut.buy(provider.getSigner(account));
+                      out?.buy(library.getSigner(account));
                     }}
                   >
                     Buy
@@ -173,7 +221,7 @@ const BuyWithCryptoExample = () => {
               </div>
             )}
           </div>
-          <div>Error: {error}</div>
+          {/* <div>Error: {error}</div> */}
         </div>
       ) : (
         <button onClick={() => activate(Injected)}>Connect to Metamask</button>

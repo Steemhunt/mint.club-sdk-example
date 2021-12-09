@@ -1,11 +1,11 @@
 import "./App.css";
 import { Web3ReactProvider } from "@web3-react/core";
-import BuyWithMintExample from "./BuyWithMintExample";
 import { getLibrary } from "./web3React";
 import { useState } from "react";
+import CreateExample from "./CreateExample";
+import BuyWithMintExample from "./BuyWithMintExample";
 import BuyWithCryptoExample from "./BuyWithCryptoExample";
 import SellToMintExample from "./SellToMintExample";
-import CreateExample from "./CreateExample";
 import SellToCryptoExample from "./SellToCryptoExample";
 
 const TAB_BUY_WITH_MINT_EXAMPLE = 0;

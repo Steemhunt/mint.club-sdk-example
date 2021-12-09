@@ -1,39 +1,75 @@
 import { useWeb3React } from "@web3-react/core";
-import {
-  ADDRESSES,
-  useAllowance,
-  useApprove,
-  useBuyWithMint,
-  useWeb3Provider,
-} from "mint.club-sdk";
-import React, { useState } from "react";
+import { ADDRESSES, allowance, approve, buyWithMint } from "mint.club-sdk";
+import React, { useEffect, useMemo, useState } from "react";
 import { Injected } from "./web3React";
+import { debounce } from "lodash";
 
 const BuyExample = () => {
   const [amount, setAmount] = useState(0);
   const [tokenAddress, setTokenAddress] = useState("");
   const [referrer, setReferrer] = useState("");
   const [slippage, setSlippage] = useState(2);
+  const [loading, setLoading] = useState(false);
+  const [allowed, setAllowed] = useState(null);
+  const [out, setOut] = useState(null);
   const [inputType, setInputType] = useState("USD");
-  const provider = useWeb3Provider();
   const { activate, deactivate, account, library, chainId } = useWeb3React();
-  const { approve } = useApprove();
 
-  const { amountOut, loading, error } = useBuyWithMint({
-    amountIn: amount,
-    inputType,
-    slippage,
+  async function calc(
+    amount,
     tokenAddress,
+    slippage,
     referrer,
-    chainId,
-  });
-
-  const allowance = useAllowance(
-    ADDRESSES.mint[chainId],
-    account,
-    ADDRESSES.mintClubBond[chainId],
+    inputType,
+    forcedMintPrice,
     chainId
-  );
+  ) {
+    const result = await buyWithMint(
+      amount,
+      tokenAddress,
+      slippage,
+      referrer,
+      inputType === "USD",
+      forcedMintPrice,
+      chainId
+    );
+
+    setLoading(false);
+    setOut(result);
+  }
+
+  const debouncedCalculation = useMemo(() => debounce(calc, 1000), []);
+
+  useEffect(() => {
+    if (amount && tokenAddress) {
+      setLoading(true);
+      setOut(null);
+      debouncedCalculation(
+        amount,
+        tokenAddress,
+        slippage,
+        referrer,
+        inputType,
+        null,
+        chainId
+      );
+    }
+  }, [amount, tokenAddress, referrer, slippage, inputType, chainId]);
+
+  useEffect(() => {
+    if (account && chainId) {
+      (async () => {
+        const _allowance = await allowance(
+          ADDRESSES.mint[chainId],
+          account,
+          ADDRESSES.mintClubBond[chainId],
+          chainId
+        );
+
+        setAllowed(_allowance?.toString());
+      })();
+    }
+  }, [account, chainId]);
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -83,15 +119,15 @@ const BuyExample = () => {
             />
           </div>
           <div>
-            MINT Allowance: {allowance}
-            {tokenAddress && allowance === "0" && (
+            MINT Allowance: {allowed}
+            {tokenAddress && allowed === "0" && (
               <button
                 onClick={() => {
                   approve(
                     ADDRESSES.mint[chainId],
                     ADDRESSES.mintClubBond[chainId],
+                    library.getSigner(account),
                     null,
-                    provider.getSigner(account),
                     chainId
                   );
                 }}
@@ -105,11 +141,11 @@ const BuyExample = () => {
               "loading..."
             ) : (
               <div>
-                amountOut: {JSON.stringify(amountOut)}
-                {amountOut.buy && (
+                amountOut: {out?.value.toString()}
+                {out?.buy && (
                   <button
                     onClick={() => {
-                      amountOut.buy(provider.getSigner(account));
+                      out?.buy(library.getSigner(account));
                     }}
                   >
                     Buy
@@ -118,7 +154,7 @@ const BuyExample = () => {
               </div>
             )}
           </div>
-          <div>Error: {error}</div>
+          {/* <div>Error: {error}</div> */}
         </div>
       ) : (
         <button onClick={() => activate(Injected)}>Connect to Metamask</button>

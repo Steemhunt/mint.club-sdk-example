@@ -1,35 +1,40 @@
 import { useWeb3React } from "@web3-react/core";
-import {
-  ADDRESSES,
-  useAllowance,
-  useSellToMint,
-  useWeb3Provider,
-} from "mint.club-sdk";
-import React, { useState } from "react";
+import { ADDRESSES, approve, allowance, sellToMint } from "mint.club-sdk";
+import React, { useState, useMemo, useEffect } from "react";
 import { Injected } from "./web3React";
+import { debounce } from "lodash";
 
 const SellToMintExample = () => {
   const [amount, setAmount] = useState(0);
   const [tokenAddress, setTokenAddress] = useState("");
   const [referrer, setReferrer] = useState("");
   const [slippage, setSlippage] = useState(2);
-  const provider = useWeb3Provider();
-  const { activate, deactivate, account, chainId } = useWeb3React();
+  const [loading, setLoading] = useState(false);
+  const [out, setOut] = useState(null);
+  const { activate, deactivate, account, chainId, library } = useWeb3React();
 
-  const { amountOut, loading, error } = useSellToMint({
-    amountIn: amount,
-    tokenAddress,
-    slippage,
-    referrer,
-    chainId,
-  });
+  async function calc(amount, tokenAddress, slippage, referrer, chainId) {
+    const result = await sellToMint(
+      amount,
+      tokenAddress,
+      slippage,
+      referrer,
+      chainId
+    );
 
-  const allowance = useAllowance(
-    tokenAddress,
-    account,
-    ADDRESSES.mintClubBond[chainId],
-    chainId
-  );
+    setLoading(false);
+    setOut(result);
+  }
+
+  const debouncedCalculation = useMemo(() => debounce(calc, 1000), []);
+
+  useEffect(() => {
+    if (amount && tokenAddress) {
+      setLoading(true);
+      setOut(null);
+      debouncedCalculation(amount, tokenAddress, slippage, referrer, chainId);
+    }
+  }, [amount, tokenAddress, referrer, slippage, chainId]);
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -69,26 +74,25 @@ const SellToMintExample = () => {
               onChange={(e) => setReferrer(e.target.value)}
             />
           </div>
-          <div>Token Allowance: {allowance}</div>
           <div>
             {loading ? (
               "loading..."
             ) : (
               <div>
-                amountOut: {JSON.stringify(amountOut)}
-                {amountOut.approve && (
+                amountOut: {JSON.stringify(out?.value?.toString())}
+                {out?.approve && (
                   <button
                     onClick={() => {
-                      amountOut.approve(provider.getSigner(account));
+                      out?.approve(library.getSigner(account));
                     }}
                   >
                     Approve
                   </button>
                 )}
-                {amountOut.sell && (
+                {out?.sell && (
                   <button
                     onClick={() => {
-                      amountOut.sell(provider.getSigner(account));
+                      out?.sell(library.getSigner(account));
                     }}
                   >
                     Sell
@@ -97,7 +101,7 @@ const SellToMintExample = () => {
               </div>
             )}
           </div>
-          <div>Error: {error}</div>
+          {/* <div>Error: {error}</div> */}
         </div>
       ) : (
         <button onClick={() => activate(Injected)}>Connect to Metamask</button>

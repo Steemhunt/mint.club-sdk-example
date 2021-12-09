@@ -1,12 +1,8 @@
 import { useWeb3React } from "@web3-react/core";
-import {
-  ADDRESSES,
-  useAllowance,
-  useSellToCrypto,
-  useWeb3Provider,
-} from "mint.club-sdk";
-import React, { useState } from "react";
+import { ADDRESSES, allowance, sellToCrypto } from "mint.club-sdk";
+import React, { useState, useMemo, useEffect } from "react";
 import { Injected } from "./web3React";
+import { debounce } from "lodash";
 
 const SellToCryptoExample = () => {
   const [amount, setAmount] = useState(0);
@@ -14,29 +10,52 @@ const SellToCryptoExample = () => {
   const [referrer, setReferrer] = useState("");
   const [decimals, setDecimals] = useState(18);
   const [tokenOut, setTokenOut] = useState("BNB");
+  const [loading, setLoading] = useState(false);
+  const [out, setOut] = useState(null);
 
   const [slippage, setSlippage] = useState(2);
-  const provider = useWeb3Provider();
-  const { activate, deactivate, account, chainId } = useWeb3React();
+  const { activate, deactivate, account, chainId, library } = useWeb3React();
 
-  const { amountOut, loading, error } = useSellToCrypto({
-    amountIn: amount,
+  async function calc(
+    amount,
     tokenAddress,
-    tokenOut: {
-      address: tokenOut,
-      decimals,
-    },
+    tokenOut,
     slippage,
     referrer,
-    chainId,
-  });
-
-  const allowance = useAllowance(
-    tokenAddress,
-    account,
-    ADDRESSES.mintClubZap[chainId],
     chainId
-  );
+  ) {
+    const result = await sellToCrypto(
+      amount,
+      tokenAddress,
+      tokenOut,
+      slippage,
+      referrer,
+      chainId
+    );
+
+    setLoading(false);
+    setOut(result);
+  }
+
+  const debouncedCalculation = useMemo(() => debounce(calc, 1000), []);
+
+  useEffect(() => {
+    if (amount && tokenAddress) {
+      setLoading(true);
+      setOut(null);
+      debouncedCalculation(
+        amount,
+        tokenAddress,
+        {
+          address: tokenOut,
+          decimals,
+        },
+        slippage,
+        referrer,
+        chainId
+      );
+    }
+  }, [amount, tokenAddress, tokenOut, slippage, referrer, chainId]);
 
   return (
     <div style={{ marginTop: 20 }}>
@@ -148,26 +167,25 @@ const SellToCryptoExample = () => {
               onChange={(e) => setReferrer(e.target.value)}
             />
           </div>
-          <div>Token Allowance: {allowance}</div>
           <div>
             {loading ? (
               "loading..."
             ) : (
               <div>
-                amountOut: {JSON.stringify(amountOut)}
-                {amountOut.approve && (
+                amountOut: {out?.value?.toString()}
+                {out?.approve && (
                   <button
                     onClick={() => {
-                      amountOut.approve(provider.getSigner(account));
+                      out?.approve(library.getSigner(account));
                     }}
                   >
                     Approve
                   </button>
                 )}
-                {amountOut.sell && (
+                {out?.sell && (
                   <button
                     onClick={() => {
-                      amountOut.sell(provider.getSigner(account));
+                      out?.sell(library.getSigner(account));
                     }}
                   >
                     Sell
@@ -176,7 +194,7 @@ const SellToCryptoExample = () => {
               </div>
             )}
           </div>
-          <div>Error: {error}</div>
+          {/* <div>Error: {error}</div> */}
         </div>
       ) : (
         <button onClick={() => activate(Injected)}>Connect to Metamask</button>
